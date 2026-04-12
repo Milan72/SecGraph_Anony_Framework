@@ -23,6 +23,8 @@ class GraphAlgorithms {
         return _randomWalk(graph, k);
       case AlgorithmType.newAnonymization:
         return _newAnonymization(graph);
+      case AlgorithmType.testAnonymization:
+        return _testAnonymization(graph);
     }
   }
 
@@ -257,5 +259,28 @@ class GraphAlgorithms {
     final kCoreRatio = _calculateKCore(graph, k);
     final kPlusOneCoreRatio = _calculateKCore(graph, k + 1);
     return max(0, kCoreRatio - kPlusOneCoreRatio);
+  }
+
+  /// Test Anonymization - relabel nodes with generic IDs
+  static GraphModel _testAnonymization(GraphModel graph) {
+    final nodeList = graph.nodes.toList()..sort();
+    final mapping = <int, int>{};
+
+    for (var i = 0; i < nodeList.length; i++) {
+      mapping[nodeList[i]] = i;
+    }
+
+    final newEdges = graph.edges.map((edge) {
+      return EdgeModel(
+        source: mapping[edge.source]!,
+        target: mapping[edge.target]!,
+      );
+    }).toList();
+
+    return GraphModel(
+      fileName: '${graph.fileName}_testanonymized',
+      nodeCount: graph.nodeCount,
+      edges: newEdges,
+    );
   }
 }

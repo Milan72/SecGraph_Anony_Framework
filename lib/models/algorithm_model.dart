@@ -6,6 +6,7 @@ enum AlgorithmType {
   randomSwitch,
   randomWalk,
   newAnonymization,
+  testAnonymization,
 }
 
 enum PrivacyLevel { low, medium, high }
@@ -163,6 +164,27 @@ class AlgorithmModel {
           useCase: 'Preserve global structure while disrupting local patterns',
           icon: Icons.directions_walk,
           color: Color(0xFFF08080),
+        ),
+          const AlgorithmModel(
+          type: AlgorithmType.testAnonymization,
+          name: 'Test Anonymization',
+          shortDescription: 'Remove node identities by relabeling',
+          fullDescription:
+              'Removes node identities by relabeling with generic IDs (0, 1, 2...). '
+              'Preserves 100% of graph structure but provides minimal privacy as '
+              'structural fingerprints remain.',
+          steps: [
+            'Load original graph',
+            'Create mapping: original_node → generic_id',
+            'Relabel all nodes with new IDs',
+            'Output anonymized graph',
+          ],
+          privacy: PrivacyLevel.low,
+          utility: UtilityLevel.perfect,
+          useCase: 'Baseline for comparison',
+          icon: Icons.label_off,
+          color: Color(0xFFFFFFE0),
+          usesKParameter: false,
         ),
       ];
 }
