@@ -5,6 +5,7 @@ enum AlgorithmType {
   randomAddDelete,
   randomSwitch,
   randomWalk,
+  newAnonymization,
 }
 
 enum PrivacyLevel { low, medium, high }
@@ -138,6 +139,24 @@ class AlgorithmModel {
             '  Walk k steps randomly',
             '  Reach endpoint x',
             '  Replace (u, v) with (u, x)',
+          ],
+          privacy: PrivacyLevel.medium,
+          utility: UtilityLevel.medium,
+          useCase: 'Preserve global structure while disrupting local patterns',
+          icon: Icons.directions_walk,
+          color: Color(0xFFF08080),
+        ),
+        const AlgorithmModel(
+          type: AlgorithmType.newAnonymization,
+          name: 'New Anonymization',
+          shortDescription: 'Relabel nodes with generic IDs',
+          fullDescription:
+              'Replaces each node ID with a generic ID to anonymize the graph.',
+          steps: [
+            'List all nodes',
+            'Sort nodes',
+            'Assign new generic IDs',
+            'Replace old IDs with new IDs in edges',
           ],
           privacy: PrivacyLevel.medium,
           utility: UtilityLevel.medium,

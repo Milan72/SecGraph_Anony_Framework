@@ -21,6 +21,8 @@ class GraphAlgorithms {
         return _randomSwitch(graph, k);
       case AlgorithmType.randomWalk:
         return _randomWalk(graph, k);
+      case AlgorithmType.newAnonymization:
+        return _newAnonymization(graph);
     }
   }
 
@@ -167,6 +169,29 @@ class GraphAlgorithms {
 
     return GraphModel(
       fileName: '${graph.fileName}_randomwalk',
+      nodeCount: graph.nodeCount,
+      edges: newEdges,
+    );
+  }
+
+  /// New Anonymization - relabel nodes with generic IDs
+  static GraphModel _newAnonymization(GraphModel graph) {
+    final nodeList = graph.nodes.toList()..sort();
+    final mapping = <int, int>{};
+
+    for (var i = 0; i < nodeList.length; i++) {
+      mapping[nodeList[i]] = i;
+    }
+
+    final newEdges = graph.edges.map((edge) {
+      return EdgeModel(
+        source: mapping[edge.source]!,
+        target: mapping[edge.target]!,
+      );
+    }).toList();
+
+    return GraphModel(
+      fileName: '${graph.fileName}_newanonymized',
       nodeCount: graph.nodeCount,
       edges: newEdges,
     );
