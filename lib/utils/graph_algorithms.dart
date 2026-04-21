@@ -1,17 +1,72 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import '../models/graph_model.dart';
 import '../models/algorithm_model.dart';
 import '../models/metric_model.dart';
 
+// ---------------------------------------------------------------------------
+// Compute isolate parameter / entry-point helpers (top-level, required by
+// Flutter's compute() which cannot accept closures or static methods as of
+// the current SDK).
+// ---------------------------------------------------------------------------
+
+class _AlgorithmComputeParams {
+  final GraphModel graph;
+  final AlgorithmType algorithm;
+  final int k;
+  const _AlgorithmComputeParams(this.graph, this.algorithm, this.k);
+}
+
+class _MetricsComputeParams {
+  final GraphModel graph;
+  final List<MetricType> metrics;
+  final int k;
+  const _MetricsComputeParams(this.graph, this.metrics, this.k);
+}
+
+// These functions live at library scope so they can access GraphAlgorithms
+// private members (Dart privacy is library-scoped) while still being
+// reachable by compute().
+GraphModel _runAlgorithmEntry(_AlgorithmComputeParams p) =>
+    GraphAlgorithms._runSync(p.graph, p.algorithm, p.k);
+
+Map<MetricType, double> _calculateMetricsEntry(_MetricsComputeParams p) {
+  final results = <MetricType, double>{};
+  for (final m in p.metrics) {
+    results[m] = GraphAlgorithms._calculateMetricSync(p.graph, m, p.k);
+  }
+  return results;
+}
+
 class GraphAlgorithms {
   static final _random = Random();
 
-  /// Run anonymization algorithm
+  /// Run anonymization algorithm in a background isolate.
   static Future<GraphModel> runAlgorithm(
     GraphModel graph,
     AlgorithmType algorithm,
     int k,
-  ) async {
+  ) {
+    return compute(
+      _runAlgorithmEntry,
+      _AlgorithmComputeParams(graph, algorithm, k),
+    );
+  }
+
+  /// Calculate all requested metrics in a single background isolate call.
+  static Future<Map<MetricType, double>> calculateMetricsAsync(
+    GraphModel graph,
+    List<MetricType> metrics,
+    int k,
+  ) {
+    return compute(
+      _calculateMetricsEntry,
+      _MetricsComputeParams(graph, metrics, k),
+    );
+  }
+
+  // Synchronous dispatch used by the isolate entry-point above.
+  static GraphModel _runSync(GraphModel graph, AlgorithmType algorithm, int k) {
     switch (algorithm) {
       case AlgorithmType.naive:
         return _naiveAnonymization(graph);
@@ -199,8 +254,9 @@ class GraphAlgorithms {
     );
   }
 
-  /// Calculate utility metric
-  static double calculateMetric(GraphModel graph, MetricType metric, int k) {
+  // Synchronous dispatch used by the isolate entry-point above.
+  static double _calculateMetricSync(
+      GraphModel graph, MetricType metric, int k) {
     switch (metric) {
       case MetricType.betweennessCentrality:
         return _calculateBetweenness(graph, k);

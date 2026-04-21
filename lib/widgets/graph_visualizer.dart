@@ -19,7 +19,12 @@ class GraphVisualizer extends StatefulWidget {
 
 class _GraphVisualizerState extends State<GraphVisualizer> {
   Map<int, Offset> _nodePositions = {};
+  bool _isLayoutComputing = false;
+  bool _isTruncated = false;
   final TransformationController _transformController = TransformationController();
+
+  // Cap nodes to avoid O(n²) freeze in the force-directed layout.
+  static const int _maxNodes = 150;
 
   @override
   void initState() {
@@ -35,85 +40,105 @@ class _GraphVisualizerState extends State<GraphVisualizer> {
     }
   }
 
-  void _calculateLayout() {
-    // Force-directed layout (simplified)
-    final nodes = widget.graph.nodes.toList();
+  Future<void> _calculateLayout() async {
+    // Sample nodes if the graph is very large.
+    final allNodes = widget.graph.nodes.toList();
+    final truncated = allNodes.length > _maxNodes;
+    final nodes = truncated ? allNodes.take(_maxNodes).toList() : allNodes;
+    final nodeSet = nodes.toSet();
+
+    // Only keep edges between visible nodes.
+    final displayEdges = widget.graph.edges
+        .where((e) => nodeSet.contains(e.source) && nodeSet.contains(e.target))
+        .toList();
+
     final random = Random(42); // Deterministic seed
 
-    // Initialize random positions
-    _nodePositions = {};
+    // Initialize random positions in a local map (not _nodePositions)
+    // so we don't mutate state while iterating below.
+    var positions = <int, Offset>{};
     for (final node in nodes) {
-      _nodePositions[node] = Offset(
+      positions[node] = Offset(
         random.nextDouble() * 400 + 50,
         random.nextDouble() * 400 + 50,
       );
     }
 
-    // Run force-directed iterations
+    if (mounted) {
+      setState(() {
+        _nodePositions = {};
+        _isLayoutComputing = true;
+        _isTruncated = truncated;
+      });
+    }
+
+    // Run force-directed iterations, yielding to the event loop every
+    // few steps so the UI stays responsive.
     const iterations = 50;
     const k = 100.0; // Optimal distance
     const coolingFactor = 0.95;
     var temperature = 100.0;
 
     for (var iter = 0; iter < iterations; iter++) {
-      final forces = <int, Offset>{};
+      final forces = <int, Offset>{for (final n in nodes) n: Offset.zero};
 
-      // Initialize forces
-      for (final node in nodes) {
-        forces[node] = Offset.zero;
-      }
-
-      // Repulsive forces between all pairs
+      // Repulsive forces between all pairs  O(n²) — capped by _maxNodes.
       for (var i = 0; i < nodes.length; i++) {
         for (var j = i + 1; j < nodes.length; j++) {
           final u = nodes[i];
           final v = nodes[j];
-          final delta = _nodePositions[u]! - _nodePositions[v]!;
+          final delta = positions[u]! - positions[v]!;
           final distance = max(delta.distance, 1.0);
-          final repulsion = (k * k / distance);
+          final repulsion = k * k / distance;
           final force = delta / distance * repulsion;
-
           forces[u] = forces[u]! + force;
           forces[v] = forces[v]! - force;
         }
       }
 
-      // Attractive forces along edges
-      for (final edge in widget.graph.edges) {
+      // Attractive forces along edges.
+      for (final edge in displayEdges) {
         final u = edge.source;
         final v = edge.target;
-        if (!_nodePositions.containsKey(u) || !_nodePositions.containsKey(v)) {
-          continue;
-        }
-        final delta = _nodePositions[u]! - _nodePositions[v]!;
+        if (!positions.containsKey(u) || !positions.containsKey(v)) continue;
+        final delta = positions[u]! - positions[v]!;
         final distance = max(delta.distance, 1.0);
         final attraction = distance * distance / k;
         final force = delta / distance * attraction;
-
         forces[u] = forces[u]! - force;
         forces[v] = forces[v]! + force;
       }
 
-      // Apply forces with temperature
+      // Apply forces with temperature.
       for (final node in nodes) {
         final force = forces[node]!;
         final displacement = force.distance;
         if (displacement > 0) {
-          final limitedForce = force / displacement * min(displacement, temperature);
-          _nodePositions[node] = _nodePositions[node]! + limitedForce;
+          final limitedForce =
+              force / displacement * min(displacement, temperature);
+          positions[node] = positions[node]! + limitedForce;
         }
-
-        // Keep within bounds
-        _nodePositions[node] = Offset(
-          _nodePositions[node]!.dx.clamp(20, 480),
-          _nodePositions[node]!.dy.clamp(20, 480),
+        positions[node] = Offset(
+          positions[node]!.dx.clamp(20, 480),
+          positions[node]!.dy.clamp(20, 480),
         );
       }
 
       temperature *= coolingFactor;
+
+      // Yield every 5 iterations so the event loop can process frames.
+      if (iter % 5 == 4) {
+        await Future.delayed(Duration.zero);
+        if (!mounted) return;
+      }
     }
 
-    setState(() {});
+    if (mounted) {
+      setState(() {
+        _nodePositions = positions;
+        _isLayoutComputing = false;
+      });
+    }
   }
 
   @override
@@ -123,19 +148,47 @@ class _GraphVisualizerState extends State<GraphVisualizer> {
         color: AppTheme.surfaceLight,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: InteractiveViewer(
-        transformationController: _transformController,
-        minScale: 0.5,
-        maxScale: 3.0,
-        boundaryMargin: const EdgeInsets.all(100),
-        child: CustomPaint(
-          painter: GraphPainter(
-            graph: widget.graph,
-            nodePositions: _nodePositions,
-            nodeColor: widget.nodeColor,
-          ),
-          size: const Size(500, 500),
-        ),
+      child: Stack(
+        children: [
+          if (_isLayoutComputing)
+            const Center(child: CircularProgressIndicator())
+          else
+            InteractiveViewer(
+              transformationController: _transformController,
+              minScale: 0.5,
+              maxScale: 3.0,
+              boundaryMargin: const EdgeInsets.all(100),
+              child: CustomPaint(
+                painter: GraphPainter(
+                  nodePositions: _nodePositions,
+                  nodeColor: widget.nodeColor,
+                  edges: widget.graph.edges,
+                ),
+                size: const Size(500, 500),
+              ),
+            ),
+          if (_isTruncated)
+            Positioned(
+              bottom: 8,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Showing $_maxNodes of ${widget.graph.actualNodeCount} nodes',
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -148,12 +201,12 @@ class _GraphVisualizerState extends State<GraphVisualizer> {
 }
 
 class GraphPainter extends CustomPainter {
-  final GraphModel graph;
+  final List<EdgeModel> edges;
   final Map<int, Offset> nodePositions;
   final Color nodeColor;
 
   GraphPainter({
-    required this.graph,
+    required this.edges,
     required this.nodePositions,
     required this.nodeColor,
   });
@@ -174,8 +227,8 @@ class GraphPainter extends CustomPainter {
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 
-    // Draw edges
-    for (final edge in graph.edges) {
+    // Draw edges (only those whose both endpoints have been positioned).
+    for (final edge in edges) {
       final p1 = nodePositions[edge.source];
       final p2 = nodePositions[edge.target];
       if (p1 != null && p2 != null) {
@@ -217,7 +270,7 @@ class GraphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant GraphPainter oldDelegate) {
-    return oldDelegate.graph != graph ||
+    return oldDelegate.edges != edges ||
         oldDelegate.nodePositions != nodePositions ||
         oldDelegate.nodeColor != nodeColor;
   }

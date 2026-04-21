@@ -118,14 +118,11 @@ class AppProvider extends ChangeNotifier {
 
       // Calculate metrics if selected
       if (_selectedMetrics.isNotEmpty && _anonymizedGraph != null) {
-        _metricResults = {};
-        for (final metricType in _selectedMetrics) {
-          _metricResults[metricType] = GraphAlgorithms.calculateMetric(
-            _anonymizedGraph!,
-            metricType,
-            _kValue,
-          );
-        }
+        _metricResults = await GraphAlgorithms.calculateMetricsAsync(
+          _anonymizedGraph!,
+          _selectedMetrics.toList(),
+          _kValue,
+        );
       }
 
       _isProcessing = false;
