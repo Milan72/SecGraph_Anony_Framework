@@ -9,6 +9,7 @@ import '../widgets/attack_results_card.dart';
 import '../widgets/graph_stats_card.dart';
 import '../widgets/graph_visualizer.dart';
 import '../widgets/metric_result_card.dart';
+import 'deanonymization_lab_screen.dart';
 
 class ResultsScreen extends StatelessWidget {
   const ResultsScreen({super.key});
@@ -48,7 +49,6 @@ class ResultsScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildSuccessBanner(context, provider),
-
                 const SizedBox(height: 32),
 
                 Text(
@@ -150,6 +150,7 @@ class ResultsScreen extends StatelessWidget {
                   child: Wrap(
                     spacing: 16,
                     runSpacing: 16,
+                    alignment: WrapAlignment.center,
                     children: [
                       OutlinedButton.icon(
                         onPressed: () => Navigator.pop(context),
@@ -160,6 +161,19 @@ class ResultsScreen extends StatelessWidget {
                         onPressed: () => _downloadResult(context),
                         icon: const Icon(Icons.download),
                         label: const Text('Download Anonymized Graph'),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const DeanonymizationLabScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.science),
+                        label: const Text('Open De-Anonymization Lab'),
                       ),
                     ],
                   ),
@@ -305,8 +319,7 @@ class ResultsScreen extends StatelessWidget {
     final originalVal = double.tryParse(original) ?? 0;
     final anonymizedVal = double.tryParse(anonymized) ?? 0;
     final diff = anonymizedVal - originalVal;
-    final diffPercent =
-        originalVal != 0 ? ((diff / originalVal) * 100) : 0.0;
+    final diffPercent = originalVal != 0 ? ((diff / originalVal) * 100) : 0.0;
 
     Color diffColor;
     IconData diffIcon;
