@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../config/theme.dart';
 import '../models/metric_model.dart';
 import '../providers/app_provider.dart';
+import '../utils/mtx_parser.dart';
+import '../widgets/attack_results_card.dart';
 import '../widgets/graph_stats_card.dart';
 import '../widgets/graph_visualizer.dart';
 import '../widgets/metric_result_card.dart';
-import '../utils/mtx_parser.dart';
 
 class ResultsScreen extends StatelessWidget {
   const ResultsScreen({super.key});
@@ -45,46 +47,10 @@ class ResultsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Success Banner
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.success.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.success),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_circle, color: AppTheme.success),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Anonymization Complete!',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(color: AppTheme.success),
-                            ),
-                            Text(
-                              'Applied ${provider.selectedAlgorithms.length} algorithm(s) with k=${provider.kValue}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: AppTheme.textSecondary),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _buildSuccessBanner(context, provider),
 
                 const SizedBox(height: 32),
 
-                // Graph Comparison
                 Text(
                   'Graph Comparison',
                   style: Theme.of(context).textTheme.headlineMedium,
@@ -142,7 +108,6 @@ class ResultsScreen extends StatelessWidget {
 
                 const SizedBox(height: 32),
 
-                // Statistics Comparison
                 Text(
                   'Statistics Comparison',
                   style: Theme.of(context).textTheme.headlineMedium,
@@ -150,7 +115,6 @@ class ResultsScreen extends StatelessWidget {
                 const SizedBox(height: 16),
                 _buildStatsComparison(context, provider),
 
-                // Metrics Results
                 if (provider.metricResults.isNotEmpty) ...[
                   const SizedBox(height: 32),
                   Text(
@@ -161,9 +125,27 @@ class ResultsScreen extends StatelessWidget {
                   _buildMetricResults(context, provider),
                 ],
 
+                if (provider.hasAttackResults) ...[
+                  const SizedBox(height: 32),
+                  Text(
+                    'De-Anonymization Attack Analysis',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This section estimates how vulnerable the anonymized graph is to structural re-identification using black-box graph fingerprints.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.textSecondary,
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  ...provider.attackResults.map(
+                    (result) => AttackResultsCard(result: result),
+                  ),
+                ],
+
                 const SizedBox(height: 48),
 
-                // Action Buttons
                 Center(
                   child: Wrap(
                     spacing: 16,
@@ -186,6 +168,43 @@ class ResultsScreen extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildSuccessBanner(BuildContext context, AppProvider provider) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.success.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.success),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: AppTheme.success),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Anonymization Complete!',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(color: AppTheme.success),
+                ),
+                Text(
+                  'Applied ${provider.selectedAlgorithms.length} algorithm(s) with k=${provider.kValue}. De-anonymization risk analysis was also generated.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.textSecondary,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -291,6 +310,7 @@ class ResultsScreen extends StatelessWidget {
 
     Color diffColor;
     IconData diffIcon;
+
     if (diff.abs() < 0.001) {
       diffColor = AppTheme.textSecondary;
       diffIcon = Icons.remove;
@@ -377,6 +397,7 @@ class ResultsScreen extends StatelessWidget {
 
   void _downloadResult(BuildContext context) {
     final provider = context.read<AppProvider>();
+
     if (provider.anonymizedGraph == null) return;
 
     final mtxContent = MtxParser.generateMtx(
@@ -384,7 +405,6 @@ class ResultsScreen extends StatelessWidget {
       comment: 'Anonymized with NetGUC (k=${provider.kValue})',
     );
 
-    // Show the MTX content in a dialog (web doesn't support direct file download easily)
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
