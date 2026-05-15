@@ -234,7 +234,7 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
       width: 260,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.cardColor,
+        color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: AppTheme.displayColor.withOpacity(0.25),
