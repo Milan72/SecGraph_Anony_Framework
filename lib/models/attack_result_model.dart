@@ -1,3 +1,5 @@
+import 'node_explanation_model.dart';
+
 class AttackResult {
   final String attackName;
   final double riskScore;
@@ -5,6 +7,7 @@ class AttackResult {
   final int vulnerableNodeCount;
   final List<int> vulnerableNodes;
   final Map<int, double> nodeRiskScores;
+  final List<NodeExplanation> explanations;
 
   AttackResult({
     required this.attackName,
@@ -13,6 +16,7 @@ class AttackResult {
     required this.vulnerableNodeCount,
     required this.vulnerableNodes,
     required this.nodeRiskScores,
+    this.explanations = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -23,6 +27,7 @@ class AttackResult {
       'vulnerableNodeCount': vulnerableNodeCount,
       'vulnerableNodes': vulnerableNodes,
       'nodeRiskScores': nodeRiskScores,
+      'explanations': explanations.map((e) => e.toMap()).toList(),
     };
   }
 }

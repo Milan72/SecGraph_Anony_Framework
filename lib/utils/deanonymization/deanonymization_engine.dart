@@ -1,6 +1,7 @@
 import '../../models/attack_result_model.dart';
 import '../../models/graph_model.dart';
 import '../../models/node_fingerprint_model.dart';
+import 'attack_explainer.dart';
 import 'fingerprint_extractor.dart';
 import 'privacy_risk_scorer.dart';
 
@@ -35,57 +36,68 @@ class DeanonymizationEngine {
     List<String> selectedAttacks,
   ) {
     final fingerprints = FingerprintExtractor.extract(anonymizedGraph);
-
     final results = <AttackResult>[];
 
     for (final attack in selectedAttacks) {
       switch (attack) {
         case structuralFingerprintAttack:
-          results.add(_buildAttackResult(
-            attack,
-            fingerprints,
-            _structuralFingerprintRisk(fingerprints),
-          ));
+          results.add(
+            _buildAttackResult(
+              attack,
+              fingerprints,
+              _structuralFingerprintRisk(fingerprints),
+            ),
+          );
           break;
 
         case degreeUniquenessAttack:
-          results.add(_buildAttackResult(
-            attack,
-            fingerprints,
-            _degreeRisk(fingerprints),
-          ));
+          results.add(
+            _buildAttackResult(
+              attack,
+              fingerprints,
+              _degreeRisk(fingerprints),
+            ),
+          );
           break;
 
         case neighborhoodSignatureAttack:
-          results.add(_buildAttackResult(
-            attack,
-            fingerprints,
-            _neighborhoodRisk(fingerprints),
-          ));
+          results.add(
+            _buildAttackResult(
+              attack,
+              fingerprints,
+              _neighborhoodRisk(fingerprints),
+            ),
+          );
           break;
 
         case kCoreExposureAttack:
-          results.add(_buildAttackResult(
-            attack,
-            fingerprints,
-            _kCoreRisk(fingerprints),
-          ));
+          results.add(
+            _buildAttackResult(
+              attack,
+              fingerprints,
+              _kCoreRisk(fingerprints),
+            ),
+          );
           break;
 
         case clusteringExposureAttack:
-          results.add(_buildAttackResult(
-            attack,
-            fingerprints,
-            _clusteringRisk(fingerprints),
-          ));
+          results.add(
+            _buildAttackResult(
+              attack,
+              fingerprints,
+              _clusteringRisk(fingerprints),
+            ),
+          );
           break;
 
         case compositeAttack:
-          results.add(_buildAttackResult(
-            attack,
-            fingerprints,
-            _compositeRisk(fingerprints),
-          ));
+          results.add(
+            _buildAttackResult(
+              attack,
+              fingerprints,
+              _compositeRisk(fingerprints),
+            ),
+          );
           break;
       }
     }
@@ -107,6 +119,11 @@ class DeanonymizationEngine {
     final vulnerableNodes =
         PrivacyRiskScorer.extractHighlyVulnerableNodes(nodeRiskScores);
 
+    final explanations = AttackExplainer.explainTopRiskNodes(
+      fingerprints: fingerprints,
+      nodeRiskScores: nodeRiskScores,
+    );
+
     return AttackResult(
       attackName: attackName,
       riskScore: globalRisk,
@@ -114,6 +131,7 @@ class DeanonymizationEngine {
       vulnerableNodeCount: vulnerableNodes.length,
       vulnerableNodes: vulnerableNodes,
       nodeRiskScores: nodeRiskScores,
+      explanations: explanations,
     );
   }
 
@@ -164,7 +182,9 @@ class DeanonymizationEngine {
         .fold<int>(0, (a, b) => a > b ? a : b);
 
     if (maxCore == 0) {
-      return {for (final fp in fingerprints.values) fp.nodeId: 0.0};
+      return {
+        for (final fp in fingerprints.values) fp.nodeId: 0.0,
+      };
     }
 
     return {
@@ -186,7 +206,10 @@ class DeanonymizationEngine {
     return {
       for (final fp in fingerprints.values)
         fp.nodeId:
-            (1 / (clusteringCounts[fp.clusteringCoefficient.toStringAsFixed(2)] ?? 1))
+            (1 /
+                    (clusteringCounts[
+                            fp.clusteringCoefficient.toStringAsFixed(2)] ??
+                        1))
                 .clamp(0.0, 1.0),
     };
   }

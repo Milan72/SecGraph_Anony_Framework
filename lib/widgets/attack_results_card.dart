@@ -12,9 +12,7 @@ class AttackResultsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final riskPercent =
-        (result.riskScore * 100).toStringAsFixed(2);
-
+    final riskPercent = (result.riskScore * 100).toStringAsFixed(2);
     final uniquenessPercent =
         (result.uniquenessScore * 100).toStringAsFixed(2);
 
@@ -94,6 +92,27 @@ class AttackResultsCard extends StatelessWidget {
                 )
                 .toList(),
           ),
+
+          if (result.explanations.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            const Divider(color: Colors.white24),
+            const SizedBox(height: 14),
+
+            const Text(
+              'Why These Nodes Were Vulnerable',
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            ...result.explanations.map(
+              (explanation) => _explanationTile(explanation),
+            ),
+          ],
         ],
       ),
     );
@@ -103,8 +122,7 @@ class AttackResultsCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-        mainAxisAlignment:
-            MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             title,
@@ -121,6 +139,104 @@ class AttackResultsCard extends StatelessWidget {
               fontSize: 16,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _explanationTile(dynamic explanation) {
+    final riskPercent = (explanation.riskScore * 100).toStringAsFixed(1);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.22),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded,
+                  color: Colors.orangeAccent, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Node ${explanation.nodeId}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Risk: $riskPercent%',
+                style: const TextStyle(
+                  color: Colors.orangeAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          ...explanation.reasons.map<Widget>(
+            (reason) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '• ',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  Expanded(
+                    child: Text(
+                      reason,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          if (explanation.evidence.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: explanation.evidence.entries.map<Widget>(
+                (entry) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.withOpacity(0.22),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${entry.key}: ${entry.value}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  );
+                },
+              ).toList(),
+            ),
+          ],
         ],
       ),
     );

@@ -70,29 +70,23 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Choose structural attacks to simulate how vulnerable the anonymized graph is to re-identification.',
+                    'Choose structural attacks to test how vulnerable the anonymized graph is to re-identification.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: AppTheme.textSecondary,
                         ),
                   ),
                   const SizedBox(height: 28),
-
                   _buildGraphSummary(provider),
-
                   const SizedBox(height: 28),
-
                   Text(
                     'Attack Selection',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 12),
-
                   ...DeanonymizationEngine.availableAttacks.map(
                     (attack) => _buildAttackOption(attack),
                   ),
-
                   const SizedBox(height: 24),
-
                   ElevatedButton.icon(
                     onPressed: _selectedAttacks.isEmpty
                         ? null
@@ -100,8 +94,9 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
                     icon: const Icon(Icons.security),
                     label: const Text('Run Selected Attacks'),
                   ),
-
                   if (_hasRun) ...[
+                    const SizedBox(height: 32),
+                    _buildAttackDashboard(context),
                     const SizedBox(height: 32),
                     Text(
                       'Attack Results',
@@ -163,6 +158,168 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
     );
   }
 
+  Widget _buildAttackDashboard(BuildContext context) {
+    final highestRiskAttack = _results.reduce(
+      (a, b) => a.riskScore >= b.riskScore ? a : b,
+    );
+
+    final averageRisk = _results.isEmpty
+        ? 0.0
+        : _results
+                .map((result) => result.riskScore)
+                .reduce((a, b) => a + b) /
+            _results.length;
+
+    final totalVulnerableNodes = _results.fold<int>(
+      0,
+      (sum, result) => sum + result.vulnerableNodeCount,
+    );
+
+    final severity = _riskSeverity(averageRisk);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Attack Comparison Dashboard',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Summary of how selected attacks performed against the anonymized graph.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 22),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                _dashboardTile(
+                  'Average Risk',
+                  '${(averageRisk * 100).toStringAsFixed(2)}%',
+                  severity,
+                ),
+                _dashboardTile(
+                  'Highest-Risk Attack',
+                  highestRiskAttack.attackName,
+                  'Most Exposing',
+                ),
+                _dashboardTile(
+                  'Highest Risk Score',
+                  '${(highestRiskAttack.riskScore * 100).toStringAsFixed(2)}%',
+                  'Peak Leakage',
+                ),
+                _dashboardTile(
+                  'Total Vulnerable Hits',
+                  '$totalVulnerableNodes',
+                  'Across Attacks',
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonTable(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardTile(String title, String value, String subtitle) {
+    return Container(
+      width: 260,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppTheme.displayColor.withOpacity(0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(color: AppTheme.textSecondary)),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComparisonTable() {
+    return Column(
+      children: [
+        _comparisonRow(
+          'Attack',
+          'Risk',
+          'Unique',
+          'Vulnerable',
+          isHeader: true,
+        ),
+        const Divider(),
+        ..._results.map(
+          (result) => _comparisonRow(
+            result.attackName,
+            '${(result.riskScore * 100).toStringAsFixed(1)}%',
+            '${(result.uniquenessScore * 100).toStringAsFixed(1)}%',
+            result.vulnerableNodeCount.toString(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _comparisonRow(
+    String attack,
+    String risk,
+    String unique,
+    String vulnerable, {
+    bool isHeader = false,
+  }) {
+    final style = TextStyle(
+      fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
+      color: isHeader ? Colors.white : AppTheme.textSecondary,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(flex: 4, child: Text(attack, style: style)),
+          Expanded(child: Text(risk, style: style)),
+          Expanded(child: Text(unique, style: style)),
+          Expanded(child: Text(vulnerable, style: style)),
+        ],
+      ),
+    );
+  }
+
+  String _riskSeverity(double score) {
+    if (score >= 0.75) return 'Severe Exposure';
+    if (score >= 0.50) return 'High Exposure';
+    if (score >= 0.25) return 'Moderate Exposure';
+    return 'Low Exposure';
+  }
+
   String _attackDescription(String attack) {
     switch (attack) {
       case DeanonymizationEngine.degreeUniquenessAttack:
@@ -203,7 +360,7 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
             SizedBox(height: 10),
             Text(
               'This is a black-box evaluation: the system assumes the attacker only sees '
-              'the anonymized graph and tries to estimate privacy leakage from structure alone.',
+              'the anonymized graph and estimates privacy leakage from structure alone.',
             ),
           ],
         ),
