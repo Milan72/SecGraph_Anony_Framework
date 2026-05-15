@@ -1,5 +1,4 @@
 import '../../models/attack_result_model.dart';
-import '../../models/edge_model.dart';
 import '../../models/graph_model.dart';
 
 class ReconstructionEngine {
@@ -44,21 +43,29 @@ class ReconstructionEngine {
     required GraphModel anonymizedGraph,
     required GraphModel reconstructedGraph,
   }) {
-    if (anonymizedGraph.edgeCount == 0) return 0.0;
+    if (anonymizedGraph.edgeCount == 0) {
+      return 0.0;
+    }
 
-    return reconstructedGraph.edgeCount / anonymizedGraph.edgeCount;
+    return reconstructedGraph.edgeCount /
+        anonymizedGraph.edgeCount;
   }
 
   static double calculateNodeRecoveryScore({
     required GraphModel anonymizedGraph,
     required GraphModel reconstructedGraph,
   }) {
-    if (anonymizedGraph.actualNodeCount == 0) return 0.0;
+    if (anonymizedGraph.actualNodeCount == 0) {
+      return 0.0;
+    }
 
-    return reconstructedGraph.actualNodeCount / anonymizedGraph.actualNodeCount;
+    return reconstructedGraph.actualNodeCount /
+        anonymizedGraph.actualNodeCount;
   }
 
-  static Set<int> _collectHighRiskNodes(List<AttackResult> attackResults) {
+  static Set<int> _collectHighRiskNodes(
+    List<AttackResult> attackResults,
+  ) {
     final nodes = <int>{};
 
     for (final result in attackResults) {
