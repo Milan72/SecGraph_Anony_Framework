@@ -5,6 +5,7 @@ import '../models/attack_result_model.dart';
 import '../models/graph_model.dart';
 import '../models/metric_model.dart';
 import '../utils/deanonymization/deanonymization_engine.dart';
+import '../utils/deanonymization/reconstruction_engine.dart';
 import '../utils/graph_algorithms.dart';
 import '../utils/mtx_parser.dart';
 
@@ -12,6 +13,7 @@ class AppProvider extends ChangeNotifier {
   // Graph state
   GraphModel? _originalGraph;
   GraphModel? _anonymizedGraph;
+  GraphModel? _reconstructedGraph;
 
   // Selection state
   final Set<AlgorithmType> _selectedAlgorithms = {};
@@ -28,9 +30,14 @@ class AppProvider extends ChangeNotifier {
   Map<MetricType, double> _metricResults = {};
   List<AttackResult> _attackResults = [];
 
+  // Reconstruction metrics
+  double _structuralRecoveryScore = 0.0;
+  double _nodeRecoveryScore = 0.0;
+
   // Graph getters
   GraphModel? get originalGraph => _originalGraph;
   GraphModel? get anonymizedGraph => _anonymizedGraph;
+  GraphModel? get reconstructedGraph => _reconstructedGraph;
 
   // Selection getters
   Set<AlgorithmType> get selectedAlgorithms => _selectedAlgorithms;
@@ -47,10 +54,15 @@ class AppProvider extends ChangeNotifier {
   Map<MetricType, double> get metricResults => _metricResults;
   List<AttackResult> get attackResults => _attackResults;
 
+  // Reconstruction getters
+  double get structuralRecoveryScore => _structuralRecoveryScore;
+  double get nodeRecoveryScore => _nodeRecoveryScore;
+
   // Convenience getters
   bool get hasGraph => _originalGraph != null;
   bool get hasAnonymizedGraph => _anonymizedGraph != null;
   bool get hasAttackResults => _attackResults.isNotEmpty;
+  bool get hasReconstructedGraph => _reconstructedGraph != null;
 
   Future<void> loadMtxFile(String path, String fileName) async {
     try {
@@ -125,6 +137,8 @@ class AppProvider extends ChangeNotifier {
         _anonymizedGraph!,
       );
 
+      _buildReconstruction();
+
       if (_selectedMetrics.isNotEmpty) {
         _metricResults = await GraphAlgorithms.calculateMetricsAsync(
           _anonymizedGraph!,
@@ -151,15 +165,39 @@ class AppProvider extends ChangeNotifier {
         _anonymizedGraph!,
       );
 
+      _buildReconstruction();
+
       _setProcessing(false);
     } catch (e) {
       _setError('De-anonymization attack failed: $e');
     }
   }
 
+  Future<void> runSelectedDeanonymizationAttacks(
+    List<String> selectedAttacks,
+  ) async {
+    if (_anonymizedGraph == null || selectedAttacks.isEmpty) return;
+
+    try {
+      _setProcessing(true);
+
+      _attackResults = DeanonymizationEngine.runSelectedAttacks(
+        _anonymizedGraph!,
+        selectedAttacks,
+      );
+
+      _buildReconstruction();
+
+      _setProcessing(false);
+    } catch (e) {
+      _setError('Selected de-anonymization attacks failed: $e');
+    }
+  }
+
   void reset() {
     _originalGraph = null;
     _anonymizedGraph = null;
+    _reconstructedGraph = null;
     _selectedAlgorithms.clear();
     _selectedMetrics.clear();
     _kValue = 10;
@@ -167,6 +205,8 @@ class AppProvider extends ChangeNotifier {
     _errorMessage = null;
     _metricResults = {};
     _attackResults = [];
+    _structuralRecoveryScore = 0.0;
+    _nodeRecoveryScore = 0.0;
 
     notifyListeners();
   }
@@ -176,10 +216,38 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _buildReconstruction() {
+    if (_anonymizedGraph == null || _attackResults.isEmpty) {
+      _reconstructedGraph = null;
+      _structuralRecoveryScore = 0.0;
+      _nodeRecoveryScore = 0.0;
+      return;
+    }
+
+    _reconstructedGraph = ReconstructionEngine.buildReconstructedGraph(
+      anonymizedGraph: _anonymizedGraph!,
+      attackResults: _attackResults,
+    );
+
+    _structuralRecoveryScore =
+        ReconstructionEngine.calculateStructuralRecoveryScore(
+      anonymizedGraph: _anonymizedGraph!,
+      reconstructedGraph: _reconstructedGraph!,
+    );
+
+    _nodeRecoveryScore = ReconstructionEngine.calculateNodeRecoveryScore(
+      anonymizedGraph: _anonymizedGraph!,
+      reconstructedGraph: _reconstructedGraph!,
+    );
+  }
+
   void _clearGeneratedResults() {
     _anonymizedGraph = null;
+    _reconstructedGraph = null;
     _metricResults = {};
     _attackResults = [];
+    _structuralRecoveryScore = 0.0;
+    _nodeRecoveryScore = 0.0;
   }
 
   void _setProcessing(bool value) {

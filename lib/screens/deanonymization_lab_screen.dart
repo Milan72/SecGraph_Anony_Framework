@@ -6,6 +6,8 @@ import '../models/attack_result_model.dart';
 import '../providers/app_provider.dart';
 import '../utils/deanonymization/deanonymization_engine.dart';
 import '../widgets/attack_results_card.dart';
+import '../widgets/graph_stats_card.dart';
+import '../widgets/graph_visualizer.dart';
 
 class DeanonymizationLabScreen extends StatefulWidget {
   const DeanonymizationLabScreen({super.key});
@@ -33,16 +35,15 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
     });
   }
 
-  void _runAttacks(AppProvider provider) {
+  Future<void> _runAttacks(AppProvider provider) async {
     if (provider.anonymizedGraph == null || _selectedAttacks.isEmpty) return;
 
-    final results = DeanonymizationEngine.runSelectedAttacks(
-      provider.anonymizedGraph!,
+    await provider.runSelectedDeanonymizationAttacks(
       _selectedAttacks.toList(),
     );
 
     setState(() {
-      _results = results;
+      _results = provider.attackResults;
       _hasRun = true;
     });
   }
@@ -78,26 +79,55 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
                   const SizedBox(height: 28),
                   _buildGraphSummary(provider),
                   const SizedBox(height: 28),
+
                   Text(
                     'Attack Selection',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 12),
+
                   ...DeanonymizationEngine.availableAttacks.map(
                     (attack) => _buildAttackOption(attack),
                   ),
+
                   const SizedBox(height: 24),
+
                   ElevatedButton.icon(
-                    onPressed: _selectedAttacks.isEmpty
+                    onPressed: provider.isProcessing || _selectedAttacks.isEmpty
                         ? null
                         : () => _runAttacks(provider),
                     icon: const Icon(Icons.security),
-                    label: const Text('Run Selected Attacks'),
+                    label: Text(
+                      provider.isProcessing
+                          ? 'Running Attacks...'
+                          : 'Run Selected Attacks',
+                    ),
                   ),
+
                   if (_hasRun) ...[
                     const SizedBox(height: 32),
                     _buildAttackDashboard(context),
                     const SizedBox(height: 32),
+                    _buildReconstructionSummary(context, provider),
+                    const SizedBox(height: 32),
+
+                    if (provider.hasReconstructedGraph) ...[
+                      Text(
+                        'Graph Reconstruction Comparison',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'This compares the anonymized graph against the attacker-side reconstruction inferred from high-risk structural leakage.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppTheme.textSecondary,
+                            ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildReconstructionComparison(context, provider),
+                      const SizedBox(height: 32),
+                    ],
+
                     Text(
                       'Attack Results',
                       style: Theme.of(context).textTheme.headlineSmall,
@@ -110,9 +140,11 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
                           ),
                     ),
                     const SizedBox(height: 16),
+
                     ..._results.map(
                       (result) => AttackResultsCard(result: result),
                     ),
+
                     const SizedBox(height: 24),
                     _buildInterpretationPanel(),
                   ],
@@ -223,6 +255,167 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
             ),
             const SizedBox(height: 24),
             _buildComparisonTable(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReconstructionSummary(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final reconstructed = provider.reconstructedGraph;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Attack-Reconstructed Graph Preview',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'The framework builds a partial reconstruction from exposed high-risk nodes and their leaked structural neighborhoods.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            if (reconstructed == null)
+              const Text('No reconstructed graph generated.')
+            else
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  _dashboardTile(
+                    'Recovered Nodes',
+                    '${reconstructed.actualNodeCount}',
+                    'Nodes present in reconstruction',
+                  ),
+                  _dashboardTile(
+                    'Recovered Edges',
+                    '${reconstructed.edgeCount}',
+                    'Edges inferred from leakage',
+                  ),
+                  _dashboardTile(
+                    'Structural Recovery',
+                    '${(provider.structuralRecoveryScore * 100).toStringAsFixed(2)}%',
+                    'Relative to anonymized graph',
+                  ),
+                  _dashboardTile(
+                    'Node Recovery',
+                    '${(provider.nodeRecoveryScore * 100).toStringAsFixed(2)}%',
+                    'Relative to anonymized graph',
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReconstructionComparison(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final anonymized = provider.anonymizedGraph!;
+    final reconstructed = provider.reconstructedGraph!;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 850;
+
+        if (isWide) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildGraphPanel(
+                  context,
+                  'Anonymized Graph',
+                  anonymized,
+                  AppTheme.randomWalkColor,
+                ),
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: _buildGraphPanel(
+                  context,
+                  'Attack-Reconstructed Graph',
+                  reconstructed,
+                  Colors.orangeAccent,
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            _buildGraphPanel(
+              context,
+              'Anonymized Graph',
+              anonymized,
+              AppTheme.randomWalkColor,
+            ),
+            const SizedBox(height: 24),
+            _buildGraphPanel(
+              context,
+              'Attack-Reconstructed Graph',
+              reconstructed,
+              Colors.orangeAccent,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGraphPanel(
+    BuildContext context,
+    String title,
+    dynamic graph,
+    Color nodeColor,
+  ) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: nodeColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: GraphVisualizer(
+                graph: graph,
+                nodeColor: nodeColor,
+              ),
+            ),
+            const Divider(),
+            GraphStatsCard(graph: graph, compact: true),
           ],
         ),
       ),
@@ -359,8 +552,8 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
             ),
             SizedBox(height: 10),
             Text(
-              'This is a black-box evaluation: the system assumes the attacker only sees '
-              'the anonymized graph and estimates privacy leakage from structure alone.',
+              'The reconstructed graph is not the true original graph. It is a partial '
+              'attacker-side reconstruction built from exposed high-risk structure.',
             ),
           ],
         ),
