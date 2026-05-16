@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/algorithm_model.dart';
 import '../models/attack_result_model.dart';
 import '../models/graph_model.dart';
+import '../models/inferred_edge_model.dart';
 import '../models/metric_model.dart';
 import '../utils/deanonymization/deanonymization_engine.dart';
 import '../utils/deanonymization/reconstruction_engine.dart';
@@ -10,59 +11,47 @@ import '../utils/graph_algorithms.dart';
 import '../utils/mtx_parser.dart';
 
 class AppProvider extends ChangeNotifier {
-  // Graph state
   GraphModel? _originalGraph;
   GraphModel? _anonymizedGraph;
   GraphModel? _reconstructedGraph;
 
-  // Selection state
   final Set<AlgorithmType> _selectedAlgorithms = {};
   final Set<MetricType> _selectedMetrics = {};
 
-  // Configuration state
   int _kValue = 10;
-
-  // Processing state
   bool _isProcessing = false;
   String? _errorMessage;
 
-  // Results state
   Map<MetricType, double> _metricResults = {};
   List<AttackResult> _attackResults = [];
+  List<InferredEdge> _inferredEdges = [];
 
-  // Reconstruction metrics
   double _structuralRecoveryScore = 0.0;
   double _nodeRecoveryScore = 0.0;
 
-  // Graph getters
   GraphModel? get originalGraph => _originalGraph;
   GraphModel? get anonymizedGraph => _anonymizedGraph;
   GraphModel? get reconstructedGraph => _reconstructedGraph;
 
-  // Selection getters
   Set<AlgorithmType> get selectedAlgorithms => _selectedAlgorithms;
   Set<MetricType> get selectedMetrics => _selectedMetrics;
 
-  // Configuration getters
   int get kValue => _kValue;
-
-  // Processing getters
   bool get isProcessing => _isProcessing;
   String? get errorMessage => _errorMessage;
 
-  // Results getters
   Map<MetricType, double> get metricResults => _metricResults;
   List<AttackResult> get attackResults => _attackResults;
+  List<InferredEdge> get inferredEdges => _inferredEdges;
 
-  // Reconstruction getters
   double get structuralRecoveryScore => _structuralRecoveryScore;
   double get nodeRecoveryScore => _nodeRecoveryScore;
 
-  // Convenience getters
   bool get hasGraph => _originalGraph != null;
   bool get hasAnonymizedGraph => _anonymizedGraph != null;
   bool get hasAttackResults => _attackResults.isNotEmpty;
   bool get hasReconstructedGraph => _reconstructedGraph != null;
+  bool get hasInferredEdges => _inferredEdges.isNotEmpty;
 
   Future<void> loadMtxFile(String path, String fileName) async {
     try {
@@ -205,6 +194,7 @@ class AppProvider extends ChangeNotifier {
     _errorMessage = null;
     _metricResults = {};
     _attackResults = [];
+    _inferredEdges = [];
     _structuralRecoveryScore = 0.0;
     _nodeRecoveryScore = 0.0;
 
@@ -219,10 +209,16 @@ class AppProvider extends ChangeNotifier {
   void _buildReconstruction() {
     if (_anonymizedGraph == null || _attackResults.isEmpty) {
       _reconstructedGraph = null;
+      _inferredEdges = [];
       _structuralRecoveryScore = 0.0;
       _nodeRecoveryScore = 0.0;
       return;
     }
+
+    _inferredEdges = ReconstructionEngine.generateInferredEdges(
+      anonymizedGraph: _anonymizedGraph!,
+      attackResults: _attackResults,
+    );
 
     _reconstructedGraph = ReconstructionEngine.buildReconstructedGraph(
       anonymizedGraph: _anonymizedGraph!,
@@ -246,6 +242,7 @@ class AppProvider extends ChangeNotifier {
     _reconstructedGraph = null;
     _metricResults = {};
     _attackResults = [];
+    _inferredEdges = [];
     _structuralRecoveryScore = 0.0;
     _nodeRecoveryScore = 0.0;
   }

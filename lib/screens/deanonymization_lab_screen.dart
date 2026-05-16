@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../config/theme.dart';
 import '../models/attack_result_model.dart';
+import '../models/inferred_edge_model.dart';
 import '../providers/app_provider.dart';
 import '../utils/deanonymization/deanonymization_engine.dart';
 import '../widgets/attack_results_card.dart';
@@ -110,6 +111,11 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
                     const SizedBox(height: 32),
                     _buildReconstructionSummary(context, provider),
                     const SizedBox(height: 32),
+
+                    if (provider.hasInferredEdges) ...[
+                      _buildInferredEdgesPanel(context, provider),
+                      const SizedBox(height: 32),
+                    ],
 
                     if (provider.hasReconstructedGraph) ...[
                       Text(
@@ -316,6 +322,110 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildInferredEdgesPanel(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final topEdges = provider.inferredEdges.take(8).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Top Inferred Relationships',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'These are relationships the attacker-side reconstruction inferred from shared structural exposure and neighborhood overlap.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 18),
+            ...topEdges.map(_buildInferredEdgeTile),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInferredEdgeTile(InferredEdge edge) {
+    final confidence = (edge.confidence * 100).toStringAsFixed(1);
+    final overlap = (edge.neighborhoodOverlap * 100).toStringAsFixed(1);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.orangeAccent.withOpacity(0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.link, color: Colors.orangeAccent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Node ${edge.source} ↔ Node ${edge.target}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Text(
+                '$confidence% confidence',
+                style: const TextStyle(
+                  color: Colors.orangeAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Neighborhood overlap: $overlap%',
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...edge.reasoning.map(
+            (reason) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('• ', style: TextStyle(color: Colors.white70)),
+                  Expanded(
+                    child: Text(
+                      reason,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

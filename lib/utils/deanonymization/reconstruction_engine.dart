@@ -1,7 +1,31 @@
 import '../../models/attack_result_model.dart';
 import '../../models/graph_model.dart';
+import '../../models/inferred_edge_model.dart';
 
 class ReconstructionEngine {
+  static List<InferredEdge> generateInferredEdges({
+    required GraphModel anonymizedGraph,
+    required List<AttackResult> attackResults,
+  }) {
+    final highRiskNodes = _collectHighRiskNodes(attackResults);
+
+    if (highRiskNodes.isEmpty) {
+      return [];
+    }
+
+    final existingEdgeKeys = <String>{};
+
+    for (final edge in anonymizedGraph.edges) {
+      existingEdgeKeys.add(_edgeKey(edge.source, edge.target));
+    }
+
+    return _inferLikelyEdges(
+      anonymizedGraph,
+      highRiskNodes,
+      existingEdgeKeys,
+    );
+  }
+
   static GraphModel buildReconstructedGraph({
     required GraphModel anonymizedGraph,
     required List<AttackResult> attackResults,
@@ -19,28 +43,30 @@ class ReconstructionEngine {
     final reconstructedEdges = <EdgeModel>[];
     final existingEdgeKeys = <String>{};
 
-    // Preserve directly exposed edges
     for (final edge in anonymizedGraph.edges) {
       final sourceRisk = highRiskNodes.contains(edge.source);
       final targetRisk = highRiskNodes.contains(edge.target);
 
       if (sourceRisk || targetRisk) {
         reconstructedEdges.add(edge);
-
-        existingEdgeKeys.add(
-          _edgeKey(edge.source, edge.target),
-        );
+        existingEdgeKeys.add(_edgeKey(edge.source, edge.target));
       }
     }
 
-    // Infer likely hidden edges
     final inferredEdges = _inferLikelyEdges(
       anonymizedGraph,
       highRiskNodes,
       existingEdgeKeys,
     );
 
-    reconstructedEdges.addAll(inferredEdges);
+    for (final edge in inferredEdges) {
+      reconstructedEdges.add(
+        EdgeModel(
+          source: edge.source,
+          target: edge.target,
+        ),
+      );
+    }
 
     return GraphModel(
       fileName: 'attack_reconstruction_${anonymizedGraph.fileName}',
@@ -49,68 +75,84 @@ class ReconstructionEngine {
     );
   }
 
-  static List<EdgeModel> _inferLikelyEdges(
+  static List<InferredEdge> _inferLikelyEdges(
     GraphModel graph,
     Set<int> highRiskNodes,
     Set<String> existingEdgeKeys,
   ) {
     final adjacency = _buildAdjacency(graph);
-
-    final inferred = <EdgeModel>[];
-
+    final inferred = <InferredEdge>[];
     final nodes = highRiskNodes.toList();
 
     for (int i = 0; i < nodes.length; i++) {
       for (int j = i + 1; j < nodes.length; j++) {
         final a = nodes[i];
         final b = nodes[j];
-
         final key = _edgeKey(a, b);
 
         if (existingEdgeKeys.contains(key)) {
           continue;
         }
 
-        final similarity = _neighborSimilarity(
+        final overlap = _neighborSimilarity(
           adjacency[a] ?? {},
           adjacency[b] ?? {},
         );
 
-        if (similarity >= 0.45) {
+        if (overlap >= 0.45) {
+          final confidence = _calculateConfidence(overlap);
+
           inferred.add(
-            EdgeModel(
+            InferredEdge(
               source: a,
               target: b,
+              confidence: confidence,
+              neighborhoodOverlap: overlap,
+              reasoning: _buildReasoning(overlap, confidence),
             ),
           );
         }
       }
     }
 
+    inferred.sort((a, b) => b.confidence.compareTo(a.confidence));
+
     return inferred;
   }
 
-  static double _neighborSimilarity(
-    Set<int> a,
-    Set<int> b,
-  ) {
-    if (a.isEmpty || b.isEmpty) {
-      return 0.0;
-    }
-
-    final intersection = a.intersection(b).length;
-    final union = a.union(b).length;
-
-    if (union == 0) {
-      return 0.0;
-    }
-
-    return intersection / union;
+  static double _calculateConfidence(double overlap) {
+    if (overlap >= 0.75) return 0.95;
+    if (overlap >= 0.60) return 0.85;
+    if (overlap >= 0.45) return 0.70;
+    return 0.0;
   }
 
-  static Map<int, Set<int>> _buildAdjacency(
-    GraphModel graph,
+  static List<String> _buildReasoning(
+    double overlap,
+    double confidence,
   ) {
+    final reasons = <String>[];
+
+    reasons.add(
+      'Nodes share ${(overlap * 100).toStringAsFixed(1)}% neighborhood overlap.',
+    );
+
+    if (confidence >= 0.90) {
+      reasons.add('Very strong structural similarity suggests a likely hidden relationship.');
+    } else if (confidence >= 0.80) {
+      reasons.add('Strong local topology similarity supports edge inference.');
+    } else {
+      reasons.add('Moderate shared-neighborhood evidence supports possible edge inference.');
+    }
+
+    reasons.add(
+      'Both nodes appear in high-risk exposed regions of the anonymized graph.',
+    );
+
+    return reasons;
+  }
+
+  static Map<int, Set<int>> _buildAdjacency(GraphModel graph) {
     final adjacency = <int, Set<int>>{};
 
     for (final node in graph.nodes) {
@@ -132,24 +174,18 @@ class ReconstructionEngine {
     required GraphModel anonymizedGraph,
     required GraphModel reconstructedGraph,
   }) {
-    if (anonymizedGraph.edgeCount == 0) {
-      return 0.0;
-    }
+    if (anonymizedGraph.edgeCount == 0) return 0.0;
 
-    return reconstructedGraph.edgeCount /
-        anonymizedGraph.edgeCount;
+    return reconstructedGraph.edgeCount / anonymizedGraph.edgeCount;
   }
 
   static double calculateNodeRecoveryScore({
     required GraphModel anonymizedGraph,
     required GraphModel reconstructedGraph,
   }) {
-    if (anonymizedGraph.actualNodeCount == 0) {
-      return 0.0;
-    }
+    if (anonymizedGraph.actualNodeCount == 0) return 0.0;
 
-    return reconstructedGraph.actualNodeCount /
-        anonymizedGraph.actualNodeCount;
+    return reconstructedGraph.actualNodeCount / anonymizedGraph.actualNodeCount;
   }
 
   static Set<int> _collectHighRiskNodes(
