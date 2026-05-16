@@ -23,19 +23,26 @@ class AttackResultsCard extends StatelessWidget {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: Colors.blueAccent.withOpacity(0.3),
+          color: _severityColor(result.riskScore).withOpacity(0.35),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            result.attackName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  result.attackName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              _severityBadge(result.riskScore),
+            ],
           ),
 
           const SizedBox(height: 18),
@@ -67,31 +74,40 @@ class AttackResultsCard extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: result.vulnerableNodes
-                .take(20)
-                .map(
-                  (nodeId) => Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'Node $nodeId',
-                      style: const TextStyle(
-                        color: Colors.white,
+          if (result.vulnerableNodes.isEmpty)
+            const Text(
+              'No nodes crossed the high-risk threshold for this attack.',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 13,
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: result.vulnerableNodes
+                  .take(20)
+                  .map(
+                    (nodeId) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Node $nodeId',
+                        style: const TextStyle(
+                          color: Colors.white,
+                        ),
                       ),
                     ),
-                  ),
-                )
-                .toList(),
-          ),
+                  )
+                  .toList(),
+            ),
 
           if (result.explanations.isNotEmpty) ...[
             const SizedBox(height: 22),
@@ -104,6 +120,16 @@ class AttackResultsCard extends StatelessWidget {
                 color: Colors.white70,
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            const Text(
+              'These explanations describe which structural patterns made each node easier to isolate or infer during the simulated attack.',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 13,
               ),
             ),
 
@@ -122,7 +148,8 @@ class AttackResultsCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment:
+            MainAxisAlignment.spaceBetween,
         children: [
           Text(
             title,
@@ -144,6 +171,47 @@ class AttackResultsCard extends StatelessWidget {
     );
   }
 
+  Widget _severityBadge(double score) {
+    final label = _severityLabel(score);
+    final color = _severityColor(score);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 6,
+      ),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: color.withOpacity(0.55),
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  String _severityLabel(double score) {
+    if (score >= 0.75) return 'Severe Exposure';
+    if (score >= 0.50) return 'High Exposure';
+    if (score >= 0.25) return 'Moderate Exposure';
+    return 'Low Exposure';
+  }
+
+  Color _severityColor(double score) {
+    if (score >= 0.75) return Colors.redAccent;
+    if (score >= 0.50) return Colors.orangeAccent;
+    if (score >= 0.25) return Colors.amberAccent;
+    return Colors.greenAccent;
+  }
+
   Widget _explanationTile(dynamic explanation) {
     final riskPercent = (explanation.riskScore * 100).toStringAsFixed(1);
 
@@ -162,8 +230,11 @@ class AttackResultsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.warning_amber_rounded,
-                  color: Colors.orangeAccent, size: 20),
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orangeAccent,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Node ${explanation.nodeId}',
