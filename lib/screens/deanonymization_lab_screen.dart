@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../config/theme.dart';
 import '../models/attack_result_model.dart';
+import '../models/benchmark_result_model.dart';
 import '../models/inferred_edge_model.dart';
 import '../providers/app_provider.dart';
 import '../utils/deanonymization/deanonymization_engine.dart';
@@ -48,6 +49,10 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
       _results = provider.attackResults;
       _hasRun = true;
     });
+  }
+
+  Future<void> _runBenchmark(AppProvider provider) async {
+    await provider.runBenchmarkEvaluation();
   }
 
   @override
@@ -97,7 +102,7 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
                     icon: const Icon(Icons.security),
                     label: Text(
                       provider.isProcessing
-                          ? 'Running Attacks...'
+                          ? 'Running...'
                           : 'Run Selected Attacks',
                     ),
                   ),
@@ -106,6 +111,8 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
                     _buildAttackDashboard(context),
                     const SizedBox(height: 32),
                     _buildReconstructionSummary(context, provider),
+                    const SizedBox(height: 32),
+                    _buildBenchmarkPanel(context, provider),
                     const SizedBox(height: 32),
                     if (provider.hasInferredEdges) ...[
                       _buildInferredEdgesPanel(context, provider),
@@ -194,9 +201,7 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
 
     final averageRisk = _results.isEmpty
         ? 0.0
-        : _results
-                .map((result) => result.riskScore)
-                .reduce((a, b) => a + b) /
+        : _results.map((result) => result.riskScore).reduce((a, b) => a + b) /
             _results.length;
 
     final totalVulnerableNodes = _results.fold<int>(
@@ -322,6 +327,164 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildBenchmarkPanel(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final benchmark = provider.benchmarkResult;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ground-Truth Benchmark Evaluation',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Because this app generated the anonymized graph from an original upload, the benchmark can compare the attacker-side reconstruction against the original graph.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 18),
+            ElevatedButton.icon(
+              onPressed: provider.isProcessing || !provider.hasReconstructedGraph
+                  ? null
+                  : () => _runBenchmark(provider),
+              icon: const Icon(Icons.analytics),
+              label: Text(
+                provider.hasBenchmarkResult
+                    ? 'Re-run Benchmark Evaluation'
+                    : 'Run Benchmark Evaluation',
+              ),
+            ),
+            if (benchmark != null) ...[
+              const SizedBox(height: 20),
+              _buildBenchmarkResults(benchmark),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBenchmarkResults(BenchmarkResult benchmark) {
+    final verdict = _benchmarkVerdict(benchmark);
+    final verdictColor = _benchmarkVerdictColor(benchmark);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: verdictColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: verdictColor.withOpacity(0.45),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.insights,
+                color: verdictColor,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  verdict,
+                  style: TextStyle(
+                    color: verdictColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            _dashboardTile(
+              'Node Precision',
+              '${(benchmark.nodePrecision * 100).toStringAsFixed(2)}%',
+              'Recovered nodes / reconstructed nodes',
+            ),
+            _dashboardTile(
+              'Node Recall',
+              '${(benchmark.nodeRecall * 100).toStringAsFixed(2)}%',
+              'Recovered nodes / original nodes',
+            ),
+            _dashboardTile(
+              'Edge Precision',
+              '${(benchmark.edgePrecision * 100).toStringAsFixed(2)}%',
+              'Correct edges / reconstructed edges',
+            ),
+            _dashboardTile(
+              'Edge Recall',
+              '${(benchmark.edgeRecall * 100).toStringAsFixed(2)}%',
+              'Correct edges / original edges',
+            ),
+            _dashboardTile(
+              'Structural Similarity',
+              '${(benchmark.structuralSimilarity * 100).toStringAsFixed(2)}%',
+              'Jaccard overlap of edge sets',
+            ),
+            _dashboardTile(
+              'Recovered Edges',
+              '${benchmark.recoveredEdges}',
+              'Edges shared with original graph',
+            ),
+            _dashboardTile(
+              'Recovered Nodes',
+              '${benchmark.recoveredNodes}',
+              'Nodes shared with original graph',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _benchmarkVerdict(BenchmarkResult benchmark) {
+    final combinedScore = (benchmark.structuralSimilarity * 0.5) +
+        (benchmark.edgePrecision * 0.3) +
+        (benchmark.nodePrecision * 0.2);
+
+    if (combinedScore >= 0.75) {
+      return 'Strong reconstruction: the attack recovered substantial original structure.';
+    }
+
+    if (combinedScore >= 0.50) {
+      return 'Moderate reconstruction: the attack recovered meaningful structural overlap.';
+    }
+
+    if (combinedScore >= 0.25) {
+      return 'Weak-to-moderate reconstruction: some original structure was recovered.';
+    }
+
+    return 'Weak reconstruction: limited original structure was recovered.';
+  }
+
+  Color _benchmarkVerdictColor(BenchmarkResult benchmark) {
+    final combinedScore = (benchmark.structuralSimilarity * 0.5) +
+        (benchmark.edgePrecision * 0.3) +
+        (benchmark.nodePrecision * 0.2);
+
+    if (combinedScore >= 0.75) return Colors.redAccent;
+    if (combinedScore >= 0.50) return Colors.orangeAccent;
+    if (combinedScore >= 0.25) return Colors.amberAccent;
+    return Colors.greenAccent;
   }
 
   Widget _buildInferredEdgesPanel(

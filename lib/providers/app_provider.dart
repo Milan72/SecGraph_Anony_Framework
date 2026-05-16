@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../models/algorithm_model.dart';
+import '../models/attack_pipeline_model.dart';
 import '../models/attack_result_model.dart';
+import '../models/benchmark_result_model.dart';
 import '../models/graph_model.dart';
 import '../models/inferred_edge_model.dart';
 import '../models/metric_model.dart';
+import '../utils/deanonymization/benchmark_engine.dart';
 import '../utils/deanonymization/deanonymization_engine.dart';
+import '../utils/deanonymization/pipeline_engine.dart';
 import '../utils/deanonymization/reconstruction_engine.dart';
 import '../utils/graph_algorithms.dart';
 import '../utils/mtx_parser.dart';
@@ -29,6 +33,9 @@ class AppProvider extends ChangeNotifier {
   double _structuralRecoveryScore = 0.0;
   double _nodeRecoveryScore = 0.0;
 
+  BenchmarkResult? _benchmarkResult;
+  AttackPipelineResult? _pipelineResult;
+
   GraphModel? get originalGraph => _originalGraph;
   GraphModel? get anonymizedGraph => _anonymizedGraph;
   GraphModel? get reconstructedGraph => _reconstructedGraph;
@@ -47,11 +54,16 @@ class AppProvider extends ChangeNotifier {
   double get structuralRecoveryScore => _structuralRecoveryScore;
   double get nodeRecoveryScore => _nodeRecoveryScore;
 
+  BenchmarkResult? get benchmarkResult => _benchmarkResult;
+  AttackPipelineResult? get pipelineResult => _pipelineResult;
+
   bool get hasGraph => _originalGraph != null;
   bool get hasAnonymizedGraph => _anonymizedGraph != null;
   bool get hasAttackResults => _attackResults.isNotEmpty;
   bool get hasReconstructedGraph => _reconstructedGraph != null;
   bool get hasInferredEdges => _inferredEdges.isNotEmpty;
+  bool get hasBenchmarkResult => _benchmarkResult != null;
+  bool get hasPipelineResult => _pipelineResult != null;
 
   Future<void> loadMtxFile(String path, String fileName) async {
     try {
@@ -126,6 +138,7 @@ class AppProvider extends ChangeNotifier {
         _anonymizedGraph!,
       );
 
+      _runPipeline();
       _buildReconstruction();
 
       if (_selectedMetrics.isNotEmpty) {
@@ -154,6 +167,7 @@ class AppProvider extends ChangeNotifier {
         _anonymizedGraph!,
       );
 
+      _runPipeline();
       _buildReconstruction();
 
       _setProcessing(false);
@@ -175,11 +189,29 @@ class AppProvider extends ChangeNotifier {
         selectedAttacks,
       );
 
+      _runPipeline();
       _buildReconstruction();
 
       _setProcessing(false);
     } catch (e) {
       _setError('Selected de-anonymization attacks failed: $e');
+    }
+  }
+
+  Future<void> runBenchmarkEvaluation() async {
+    if (_originalGraph == null || _reconstructedGraph == null) return;
+
+    try {
+      _setProcessing(true);
+
+      _benchmarkResult = BenchmarkEngine.evaluate(
+        originalGraph: _originalGraph!,
+        reconstructedGraph: _reconstructedGraph!,
+      );
+
+      _setProcessing(false);
+    } catch (e) {
+      _setError('Benchmark evaluation failed: $e');
     }
   }
 
@@ -195,6 +227,8 @@ class AppProvider extends ChangeNotifier {
     _metricResults = {};
     _attackResults = [];
     _inferredEdges = [];
+    _benchmarkResult = null;
+    _pipelineResult = null;
     _structuralRecoveryScore = 0.0;
     _nodeRecoveryScore = 0.0;
 
@@ -206,10 +240,22 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _runPipeline() {
+    if (_anonymizedGraph == null) {
+      _pipelineResult = null;
+      return;
+    }
+
+    _pipelineResult = PipelineEngine.runDefaultPipeline(
+      _anonymizedGraph!,
+    );
+  }
+
   void _buildReconstruction() {
     if (_anonymizedGraph == null || _attackResults.isEmpty) {
       _reconstructedGraph = null;
       _inferredEdges = [];
+      _benchmarkResult = null;
       _structuralRecoveryScore = 0.0;
       _nodeRecoveryScore = 0.0;
       return;
@@ -235,6 +281,8 @@ class AppProvider extends ChangeNotifier {
       anonymizedGraph: _anonymizedGraph!,
       reconstructedGraph: _reconstructedGraph!,
     );
+
+    _benchmarkResult = null;
   }
 
   void _clearGeneratedResults() {
@@ -243,6 +291,8 @@ class AppProvider extends ChangeNotifier {
     _metricResults = {};
     _attackResults = [];
     _inferredEdges = [];
+    _benchmarkResult = null;
+    _pipelineResult = null;
     _structuralRecoveryScore = 0.0;
     _nodeRecoveryScore = 0.0;
   }
