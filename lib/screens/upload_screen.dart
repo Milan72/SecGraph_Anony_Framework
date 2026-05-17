@@ -179,7 +179,7 @@ class UploadScreen extends StatelessWidget {
               spacing: 16,
               runSpacing: 16,
               children: [
-                _statTile('File', graph.fileName),
+                _statTile('File', graph.fileName ?? 'Benchmark Dataset'),
                 _statTile('Nodes', graph.actualNodeCount.toString()),
                 _statTile('Edges', graph.edgeCount.toString()),
                 _statTile('Density', graph.density.toStringAsFixed(4)),
