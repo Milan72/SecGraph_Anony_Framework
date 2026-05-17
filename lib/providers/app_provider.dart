@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../models/algorithm_model.dart';
 import '../models/attack_pipeline_model.dart';
 import '../models/attack_result_model.dart';
+import '../models/benchmark_dataset_model.dart';
 import '../models/benchmark_result_model.dart';
 import '../models/graph_model.dart';
 import '../models/inferred_edge_model.dart';
 import '../models/metric_model.dart';
+import '../utils/benchmark_dataset_loader.dart';
 import '../utils/deanonymization/benchmark_engine.dart';
 import '../utils/deanonymization/deanonymization_engine.dart';
 import '../utils/deanonymization/pipeline_engine.dart';
@@ -75,6 +77,25 @@ class AppProvider extends ChangeNotifier {
       _setProcessing(false);
     } catch (e) {
       _setError('Failed to load file: $e');
+    }
+  }
+
+  Future<void> loadBenchmarkDataset(
+    BenchmarkDataset dataset,
+  ) async {
+    try {
+      _setProcessing(true);
+
+      _originalGraph =
+          await BenchmarkDatasetLoader.loadDataset(dataset);
+
+      _clearGeneratedResults();
+
+      _setProcessing(false);
+    } catch (e) {
+      _setError(
+        'Failed to load benchmark dataset: $e',
+      );
     }
   }
 
