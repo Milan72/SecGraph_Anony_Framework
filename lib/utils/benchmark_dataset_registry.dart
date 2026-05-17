@@ -3,34 +3,34 @@ import '../models/benchmark_dataset_model.dart';
 class BenchmarkDatasetRegistry {
   static const List<BenchmarkDataset> datasets = [
     BenchmarkDataset(
-      id: 'sample_social_graph',
-      name: 'Sample Social Network',
+      id: 'soc_dolphins',
+      name: 'Dolphins Social Network',
       description:
-          'A small social-style benchmark graph for testing anonymization, structural attacks, and reconstruction.',
-      assetPath: 'assets/benchmark_graphs/sample_social_graph.mtx',
-      source: 'Synthetic benchmark inspired by social network topology',
-      estimatedNodes: 12,
-      estimatedEdges: 18,
+          'A real social network of bottlenose dolphins, commonly used as a benchmark for community detection and graph structure analysis.',
+      assetPath: 'assets/benchmark_graphs/soc-dolphins.mtx',
+      source: 'Network Repository',
+      estimatedNodes: 62,
+      estimatedEdges: 159,
     ),
     BenchmarkDataset(
-      id: 'sample_email_graph',
-      name: 'Sample Email Communication Network',
+      id: 'soc_tribes',
+      name: 'Tribes Social Network',
       description:
-          'A compact communication-style graph with hubs and local clusters.',
-      assetPath: 'assets/benchmark_graphs/sample_email_graph.mtx',
-      source: 'Synthetic benchmark inspired by email communication networks',
-      estimatedNodes: 14,
-      estimatedEdges: 20,
+          'A real social network representing relationships between tribes, useful for testing community leakage and structural exposure.',
+      assetPath: 'assets/benchmark_graphs/soc-tribes.mtx',
+      source: 'Network Repository',
+      estimatedNodes: 16,
+      estimatedEdges: 58,
     ),
     BenchmarkDataset(
-      id: 'sample_citation_graph',
-      name: 'Sample Citation Network',
+      id: 'soc_firm_hi_tech',
+      name: 'High-Tech Firm Social Network',
       description:
-          'A small citation-style graph with directed-like dependency structure represented as undirected edges.',
-      assetPath: 'assets/benchmark_graphs/sample_citation_graph.mtx',
-      source: 'Synthetic benchmark inspired by citation network structure',
-      estimatedNodes: 15,
-      estimatedEdges: 19,
+          'A real organizational social network from a high-tech firm, useful for studying workplace structure, hubs, and privacy leakage.',
+      assetPath: 'assets/benchmark_graphs/soc-firm-hi-tech.mtx',
+      source: 'Network Repository',
+      estimatedNodes: 33,
+      estimatedEdges: 91,
     ),
   ];
 
