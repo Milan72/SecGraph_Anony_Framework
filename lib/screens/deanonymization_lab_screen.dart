@@ -1,0 +1,1043 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../config/theme.dart';
+import '../models/attack_pipeline_model.dart';
+import '../models/attack_result_model.dart';
+import '../models/benchmark_result_model.dart';
+import '../models/inferred_edge_model.dart';
+import '../providers/app_provider.dart';
+import '../utils/deanonymization/deanonymization_engine.dart';
+import '../utils/mtx_parser.dart';
+import '../widgets/attack_results_card.dart';
+import '../widgets/graph_stats_card.dart';
+import '../widgets/graph_visualizer.dart';
+
+class DeanonymizationLabScreen extends StatefulWidget {
+  const DeanonymizationLabScreen({super.key});
+
+  @override
+  State<DeanonymizationLabScreen> createState() =>
+      _DeanonymizationLabScreenState();
+}
+
+class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
+  final Set<String> _selectedAttacks = {
+    DeanonymizationEngine.compositeAttack,
+  };
+
+  List<AttackResult> _results = [];
+  bool _hasRun = false;
+
+  void _toggleAttack(String attack) {
+    setState(() {
+      if (_selectedAttacks.contains(attack)) {
+        _selectedAttacks.remove(attack);
+      } else {
+        _selectedAttacks.add(attack);
+      }
+    });
+  }
+
+  Future<void> _runAttacks(AppProvider provider) async {
+    if (provider.anonymizedGraph == null || _selectedAttacks.isEmpty) return;
+
+    await provider.runSelectedDeanonymizationAttacks(
+      _selectedAttacks.toList(),
+    );
+
+    setState(() {
+      _results = provider.attackResults;
+      _hasRun = true;
+    });
+  }
+
+  Future<void> _runBenchmark(AppProvider provider) async {
+    await provider.runBenchmarkEvaluation();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<AppProvider>();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('De-Anonymization Lab'),
+      ),
+      body: provider.anonymizedGraph == null
+          ? const Center(
+              child: Text('No anonymized graph available.'),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Adversarial Privacy Evaluation',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Choose structural attacks to test how vulnerable the anonymized graph is to re-identification.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.textSecondary,
+                        ),
+                  ),
+                  const SizedBox(height: 28),
+                  _buildGraphSummary(provider),
+                  const SizedBox(height: 28),
+                  Text(
+                    'Attack Selection',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 12),
+                  ...DeanonymizationEngine.availableAttacks.map(
+                    (attack) => _buildAttackOption(attack),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: provider.isProcessing || _selectedAttacks.isEmpty
+                        ? null
+                        : () => _runAttacks(provider),
+                    icon: const Icon(Icons.security),
+                    label: Text(
+                      provider.isProcessing
+                          ? 'Running...'
+                          : 'Run Selected Attacks',
+                    ),
+                  ),
+                  if (_hasRun) ...[
+                    const SizedBox(height: 32),
+                    _buildAttackDashboard(context),
+                    const SizedBox(height: 32),
+                    if (provider.hasPipelineResult) ...[
+                      _buildPipelinePanel(context, provider.pipelineResult!),
+                      const SizedBox(height: 32),
+                    ],
+                    _buildReconstructionSummary(context, provider),
+                    const SizedBox(height: 32),
+                    _buildBenchmarkPanel(context, provider),
+                    const SizedBox(height: 32),
+                    if (provider.hasInferredEdges) ...[
+                      _buildInferredEdgesPanel(context, provider),
+                      const SizedBox(height: 32),
+                    ],
+                    if (provider.hasReconstructedGraph) ...[
+                      Text(
+                        'Graph Reconstruction Comparison',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'This compares the anonymized graph against the attacker-side reconstruction inferred from high-risk structural leakage.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppTheme.textSecondary,
+                            ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildReconstructionComparison(context, provider),
+                      const SizedBox(height: 32),
+                    ],
+                    Text(
+                      'Attack Results',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Higher risk means more structural uniqueness and greater re-identification exposure.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppTheme.textSecondary,
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+                    ..._results.map(
+                      (result) => AttackResultsCard(result: result),
+                    ),
+                    const SizedBox(height: 24),
+                    _buildInterpretationPanel(),
+                  ],
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildGraphSummary(AppProvider provider) {
+    final graph = provider.anonymizedGraph!;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            const Icon(Icons.hub, size: 32),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                'Analyzing anonymized graph with '
+                '${graph.actualNodeCount} nodes and ${graph.edgeCount} edges.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAttackOption(String attack) {
+    final selected = _selectedAttacks.contains(attack);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: CheckboxListTile(
+        value: selected,
+        onChanged: (_) => _toggleAttack(attack),
+        title: Text(attack),
+        subtitle: Text(_attackDescription(attack)),
+      ),
+    );
+  }
+
+  Widget _buildAttackDashboard(BuildContext context) {
+    final highestRiskAttack = _results.reduce(
+      (a, b) => a.riskScore >= b.riskScore ? a : b,
+    );
+
+    final averageRisk = _results.isEmpty
+        ? 0.0
+        : _results.map((result) => result.riskScore).reduce((a, b) => a + b) /
+            _results.length;
+
+    final totalVulnerableNodes = _results.fold<int>(
+      0,
+      (sum, result) => sum + result.vulnerableNodeCount,
+    );
+
+    final severity = _riskSeverity(averageRisk);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Attack Comparison Dashboard',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Summary of how selected attacks performed against the anonymized graph.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 22),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                _dashboardTile(
+                  'Average Risk',
+                  '${(averageRisk * 100).toStringAsFixed(2)}%',
+                  severity,
+                ),
+                _dashboardTile(
+                  'Highest-Risk Attack',
+                  highestRiskAttack.attackName,
+                  'Most Exposing',
+                ),
+                _dashboardTile(
+                  'Highest Risk Score',
+                  '${(highestRiskAttack.riskScore * 100).toStringAsFixed(2)}%',
+                  'Peak Leakage',
+                ),
+                _dashboardTile(
+                  'Total Vulnerable Hits',
+                  '$totalVulnerableNodes',
+                  'Across Attacks',
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildComparisonTable(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPipelinePanel(
+    BuildContext context,
+    AttackPipelineResult pipeline,
+  ) {
+    final cumulativePercent =
+        (pipeline.cumulativeRisk * 100).toStringAsFixed(2);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Multi-Stage Attack Simulation',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'This simulates how an attacker could chain multiple structural attacks together to increase cumulative exposure.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _pipelineColor(pipeline.cumulativeRisk).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color:
+                      _pipelineColor(pipeline.cumulativeRisk).withOpacity(0.45),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.account_tree,
+                    color: _pipelineColor(pipeline.cumulativeRisk),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Final cumulative exposure: $cumulativePercent%',
+                      style: TextStyle(
+                        color: _pipelineColor(pipeline.cumulativeRisk),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            ...List.generate(
+              pipeline.stages.length,
+              (index) {
+                final stage = pipeline.stages[index];
+                final risk = index < pipeline.stageRisks.length
+                    ? pipeline.stageRisks[index]
+                    : 0.0;
+
+                return _pipelineStageTile(
+                  index: index + 1,
+                  stage: stage,
+                  risk: risk,
+                  isLast: index == pipeline.stages.length - 1,
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pipelineStageTile({
+    required int index,
+    required String stage,
+    required double risk,
+    required bool isLast,
+  }) {
+    final riskPercent = (risk * 100).toStringAsFixed(2);
+    final color = _pipelineColor(risk);
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: color.withOpacity(0.35),
+            ),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 15,
+                backgroundColor: color.withOpacity(0.2),
+                child: Text(
+                  '$index',
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stage,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _attackDescription(stage),
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$riskPercent%',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!isLast)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Icon(
+              Icons.arrow_downward,
+              color: Colors.white.withOpacity(0.45),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Color _pipelineColor(double score) {
+    if (score >= 0.75) return Colors.redAccent;
+    if (score >= 0.50) return Colors.orangeAccent;
+    if (score >= 0.25) return Colors.amberAccent;
+    return Colors.greenAccent;
+  }
+
+  Widget _buildReconstructionSummary(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final reconstructed = provider.reconstructedGraph;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Attack-Reconstructed Graph Preview',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'The framework builds a partial reconstruction from exposed high-risk nodes and their leaked structural neighborhoods.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            if (reconstructed == null)
+              const Text('No reconstructed graph generated.')
+            else ...[
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  _dashboardTile(
+                    'Recovered Nodes',
+                    '${reconstructed.actualNodeCount}',
+                    'Nodes present in reconstruction',
+                  ),
+                  _dashboardTile(
+                    'Recovered Edges',
+                    '${reconstructed.edgeCount}',
+                    'Edges inferred from leakage',
+                  ),
+                  _dashboardTile(
+                    'Edge Reconstruction Ratio',
+                    '${(provider.structuralRecoveryScore * 100).toStringAsFixed(2)}%',
+                    'Can exceed 100% with inferred edges',
+                  ),
+                  _dashboardTile(
+                    'Node Recovery',
+                    '${(provider.nodeRecoveryScore * 100).toStringAsFixed(2)}%',
+                    'Relative to anonymized graph',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () => _downloadReconstructedGraph(context, provider),
+                icon: const Icon(Icons.download),
+                label: const Text('Export Attack-Reconstructed Graph'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBenchmarkPanel(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final benchmark = provider.benchmarkResult;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ground-Truth Benchmark Evaluation',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Because this app generated the anonymized graph from an original upload, the benchmark can compare the attacker-side reconstruction against the original graph.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 18),
+            ElevatedButton.icon(
+              onPressed: provider.isProcessing || !provider.hasReconstructedGraph
+                  ? null
+                  : () => _runBenchmark(provider),
+              icon: const Icon(Icons.analytics),
+              label: Text(
+                provider.hasBenchmarkResult
+                    ? 'Re-run Benchmark Evaluation'
+                    : 'Run Benchmark Evaluation',
+              ),
+            ),
+            if (benchmark != null) ...[
+              const SizedBox(height: 20),
+              _buildBenchmarkResults(benchmark),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBenchmarkResults(BenchmarkResult benchmark) {
+    final verdict = _benchmarkVerdict(benchmark);
+    final verdictColor = _benchmarkVerdictColor(benchmark);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: verdictColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: verdictColor.withOpacity(0.45),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.insights,
+                color: verdictColor,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  verdict,
+                  style: TextStyle(
+                    color: verdictColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            _dashboardTile(
+              'Node Precision',
+              '${(benchmark.nodePrecision * 100).toStringAsFixed(2)}%',
+              'Recovered nodes / reconstructed nodes',
+            ),
+            _dashboardTile(
+              'Node Recall',
+              '${(benchmark.nodeRecall * 100).toStringAsFixed(2)}%',
+              'Recovered nodes / original nodes',
+            ),
+            _dashboardTile(
+              'Edge Precision',
+              '${(benchmark.edgePrecision * 100).toStringAsFixed(2)}%',
+              'Correct edges / reconstructed edges',
+            ),
+            _dashboardTile(
+              'Edge Recall',
+              '${(benchmark.edgeRecall * 100).toStringAsFixed(2)}%',
+              'Correct edges / original edges',
+            ),
+            _dashboardTile(
+              'Structural Similarity',
+              '${(benchmark.structuralSimilarity * 100).toStringAsFixed(2)}%',
+              'Jaccard overlap of edge sets',
+            ),
+            _dashboardTile(
+              'Recovered Edges',
+              '${benchmark.recoveredEdges}',
+              'Edges shared with original graph',
+            ),
+            _dashboardTile(
+              'Recovered Nodes',
+              '${benchmark.recoveredNodes}',
+              'Nodes shared with original graph',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _benchmarkVerdict(BenchmarkResult benchmark) {
+    final combinedScore = (benchmark.structuralSimilarity * 0.5) +
+        (benchmark.edgePrecision * 0.3) +
+        (benchmark.nodePrecision * 0.2);
+
+    if (combinedScore >= 0.75) {
+      return 'Strong reconstruction: the attack recovered substantial original structure.';
+    }
+
+    if (combinedScore >= 0.50) {
+      return 'Moderate reconstruction: the attack recovered meaningful structural overlap.';
+    }
+
+    if (combinedScore >= 0.25) {
+      return 'Weak-to-moderate reconstruction: some original structure was recovered.';
+    }
+
+    return 'Weak reconstruction: limited original structure was recovered.';
+  }
+
+  Color _benchmarkVerdictColor(BenchmarkResult benchmark) {
+    final combinedScore = (benchmark.structuralSimilarity * 0.5) +
+        (benchmark.edgePrecision * 0.3) +
+        (benchmark.nodePrecision * 0.2);
+
+    if (combinedScore >= 0.75) return Colors.redAccent;
+    if (combinedScore >= 0.50) return Colors.orangeAccent;
+    if (combinedScore >= 0.25) return Colors.amberAccent;
+    return Colors.greenAccent;
+  }
+
+  Widget _buildInferredEdgesPanel(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final topEdges = provider.inferredEdges.take(8).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Top Inferred Relationships',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'These are relationships the attacker-side reconstruction inferred from shared structural exposure and neighborhood overlap.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 18),
+            ...topEdges.map(_buildInferredEdgeTile),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInferredEdgeTile(InferredEdge edge) {
+    final confidence = (edge.confidence * 100).toStringAsFixed(1);
+    final overlap = (edge.neighborhoodOverlap * 100).toStringAsFixed(1);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.orangeAccent.withOpacity(0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.link, color: Colors.orangeAccent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Node ${edge.source} ↔ Node ${edge.target}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Text(
+                '$confidence% confidence',
+                style: const TextStyle(
+                  color: Colors.orangeAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Neighborhood overlap: $overlap%',
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...edge.reasoning.map(
+            (reason) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('• ', style: TextStyle(color: Colors.white70)),
+                  Expanded(
+                    child: Text(
+                      reason,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReconstructionComparison(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final anonymized = provider.anonymizedGraph!;
+    final reconstructed = provider.reconstructedGraph!;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 850;
+
+        if (isWide) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildGraphPanel(
+                  context,
+                  'Anonymized Graph',
+                  anonymized,
+                  AppTheme.randomWalkColor,
+                ),
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: _buildGraphPanel(
+                  context,
+                  'Attack-Reconstructed Graph',
+                  reconstructed,
+                  Colors.orangeAccent,
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            _buildGraphPanel(
+              context,
+              'Anonymized Graph',
+              anonymized,
+              AppTheme.randomWalkColor,
+            ),
+            const SizedBox(height: 24),
+            _buildGraphPanel(
+              context,
+              'Attack-Reconstructed Graph',
+              reconstructed,
+              Colors.orangeAccent,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGraphPanel(
+    BuildContext context,
+    String title,
+    dynamic graph,
+    Color nodeColor,
+  ) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: nodeColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: GraphVisualizer(
+                graph: graph,
+                nodeColor: nodeColor,
+              ),
+            ),
+            const Divider(),
+            GraphStatsCard(graph: graph, compact: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardTile(String title, String value, String subtitle) {
+    return Container(
+      width: 260,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppTheme.displayColor.withOpacity(0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(color: AppTheme.textSecondary)),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComparisonTable() {
+    return Column(
+      children: [
+        _comparisonRow(
+          'Attack',
+          'Risk',
+          'Unique',
+          'Vulnerable',
+          isHeader: true,
+        ),
+        const Divider(),
+        ..._results.map(
+          (result) => _comparisonRow(
+            result.attackName,
+            '${(result.riskScore * 100).toStringAsFixed(1)}%',
+            '${(result.uniquenessScore * 100).toStringAsFixed(1)}%',
+            result.vulnerableNodeCount.toString(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _comparisonRow(
+    String attack,
+    String risk,
+    String unique,
+    String vulnerable, {
+    bool isHeader = false,
+  }) {
+    final style = TextStyle(
+      fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
+      color: isHeader ? Colors.white : AppTheme.textSecondary,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(flex: 4, child: Text(attack, style: style)),
+          Expanded(child: Text(risk, style: style)),
+          Expanded(child: Text(unique, style: style)),
+          Expanded(child: Text(vulnerable, style: style)),
+        ],
+      ),
+    );
+  }
+
+  String _riskSeverity(double score) {
+    if (score >= 0.75) return 'Severe Exposure';
+    if (score >= 0.50) return 'High Exposure';
+    if (score >= 0.25) return 'Moderate Exposure';
+    return 'Low Exposure';
+  }
+
+  String _attackDescription(String attack) {
+    switch (attack) {
+      case DeanonymizationEngine.degreeUniquenessAttack:
+        return 'Identifies nodes that stand out because of rare or unique degree values.';
+      case DeanonymizationEngine.neighborhoodSignatureAttack:
+        return 'Uses neighbor-degree patterns to detect structurally identifiable nodes.';
+      case DeanonymizationEngine.kCoreExposureAttack:
+        return 'Measures whether high-core nodes remain exposed after anonymization.';
+      case DeanonymizationEngine.clusteringExposureAttack:
+        return 'Checks whether local triangle structure creates identifiable fingerprints.';
+      case DeanonymizationEngine.compositeAttack:
+        return 'Combines degree, neighborhood, k-core, clustering, and fingerprint risk.';
+      default:
+        return 'Uses full structural fingerprints to estimate black-box re-identification risk.';
+    }
+  }
+
+  void _downloadReconstructedGraph(
+    BuildContext context,
+    AppProvider provider,
+  ) {
+    final reconstructed = provider.reconstructedGraph;
+
+    if (reconstructed == null) return;
+
+    final mtxContent = MtxParser.generateMtx(
+      reconstructed,
+      comment: 'Attack-reconstructed graph generated by de-anonymization lab',
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Attack-Reconstructed Graph (MTX Format)'),
+        content: SizedBox(
+          width: 500,
+          height: 400,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              mtxContent,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInterpretationPanel() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'How to Interpret This',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'A high score does not mean the original identity is fully recovered. '
+              'It means the anonymized graph still contains rare structural patterns '
+              'that could help an attacker narrow down or re-identify nodes.',
+            ),
+            SizedBox(height: 10),
+            Text(
+              'The reconstructed graph is not the true original graph. It is a partial '
+              'attacker-side reconstruction built from exposed high-risk structure.',
+            ),
+            SizedBox(height: 10),
+            Text(
+              'The multi-stage pipeline shows how risk can compound when an attacker chains multiple structural attacks together.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
