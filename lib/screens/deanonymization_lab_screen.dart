@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config/theme.dart';
+import '../models/attack_pipeline_model.dart';
 import '../models/attack_result_model.dart';
 import '../models/benchmark_result_model.dart';
 import '../models/inferred_edge_model.dart';
@@ -110,6 +111,10 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
                     const SizedBox(height: 32),
                     _buildAttackDashboard(context),
                     const SizedBox(height: 32),
+                    if (provider.hasPipelineResult) ...[
+                      _buildPipelinePanel(context, provider.pipelineResult!),
+                      const SizedBox(height: 32),
+                    ],
                     _buildReconstructionSummary(context, provider),
                     const SizedBox(height: 32),
                     _buildBenchmarkPanel(context, provider),
@@ -261,6 +266,169 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildPipelinePanel(
+    BuildContext context,
+    AttackPipelineResult pipeline,
+  ) {
+    final cumulativePercent =
+        (pipeline.cumulativeRisk * 100).toStringAsFixed(2);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Multi-Stage Attack Simulation',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'This simulates how an attacker could chain multiple structural attacks together to increase cumulative exposure.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _pipelineColor(pipeline.cumulativeRisk).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color:
+                      _pipelineColor(pipeline.cumulativeRisk).withOpacity(0.45),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.account_tree,
+                    color: _pipelineColor(pipeline.cumulativeRisk),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Final cumulative exposure: $cumulativePercent%',
+                      style: TextStyle(
+                        color: _pipelineColor(pipeline.cumulativeRisk),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            ...List.generate(
+              pipeline.stages.length,
+              (index) {
+                final stage = pipeline.stages[index];
+                final risk = index < pipeline.stageRisks.length
+                    ? pipeline.stageRisks[index]
+                    : 0.0;
+
+                return _pipelineStageTile(
+                  index: index + 1,
+                  stage: stage,
+                  risk: risk,
+                  isLast: index == pipeline.stages.length - 1,
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pipelineStageTile({
+    required int index,
+    required String stage,
+    required double risk,
+    required bool isLast,
+  }) {
+    final riskPercent = (risk * 100).toStringAsFixed(2);
+    final color = _pipelineColor(risk);
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: color.withOpacity(0.35),
+            ),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 15,
+                backgroundColor: color.withOpacity(0.2),
+                child: Text(
+                  '$index',
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stage,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _attackDescription(stage),
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$riskPercent%',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!isLast)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Icon(
+              Icons.arrow_downward,
+              color: Colors.white.withOpacity(0.45),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Color _pipelineColor(double score) {
+    if (score >= 0.75) return Colors.redAccent;
+    if (score >= 0.50) return Colors.orangeAccent;
+    if (score >= 0.25) return Colors.amberAccent;
+    return Colors.greenAccent;
   }
 
   Widget _buildReconstructionSummary(
@@ -862,6 +1030,10 @@ class _DeanonymizationLabScreenState extends State<DeanonymizationLabScreen> {
             Text(
               'The reconstructed graph is not the true original graph. It is a partial '
               'attacker-side reconstruction built from exposed high-risk structure.',
+            ),
+            SizedBox(height: 10),
+            Text(
+              'The multi-stage pipeline shows how risk can compound when an attacker chains multiple structural attacks together.',
             ),
           ],
         ),
